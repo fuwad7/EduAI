@@ -75,7 +75,7 @@ async function callOpenRouter(prompt, sys) {
       'Authorization': `Bearer ${AI_KEYS.openrouter}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
-      'X-Title': 'DIU EduAI',
+      'X-Title': 'EduAI',
     },
     body: JSON.stringify({
       model: AI_MODELS.openrouter,
@@ -160,6 +160,20 @@ async function fileToText(file) {
   });
 }
 
+async function extractTextFromPdf(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(item => item.str).join(' ') + '\n';
+  }
+  return text.trim();
+}
+
 const STORAGE_BUCKET = 'eduai-files';
 const HAS_SUPABASE = typeof supabase !== 'undefined' && !!supabase?.auth && !!supabase?.storage;
 
@@ -210,6 +224,7 @@ const DEMO_GRADES = [{id:1,student:'Ahmed Hassan',sid:'CSE2101',quiz1:85,quiz2:8
 const DEMO_COURSES = [{id:1,code:'CSE401',name:'Artificial Intelligence',credits:3,clos:['CLO1: Apply ML algorithms','CLO2: Design neural networks','CLO3: Evaluate AI ethics'],plos:['PLO1','PLO2','PLO5'],mapping:{CLO1:'PLO1,PLO2',CLO2:'PLO2',CLO3:'PLO5'},students:35,semester:'Fall 2025'},{id:2,code:'CSE301',name:'Data Structures',credits:3,clos:['CLO1: Implement core data structures','CLO2: Analyze algorithm complexity','CLO3: Solve real-world problems'],plos:['PLO1','PLO3'],mapping:{CLO1:'PLO1',CLO2:'PLO1,PLO3',CLO3:'PLO3'},students:42,semester:'Fall 2025'}];
 const DEMO_PROJECTS = [{id:1,title:'Smart Traffic Management System',student:'Ahmed Hassan',supervisor:'Dr. Sarah Ahmed',status:'In Progress',progress:65,proposal:'Submitted',defense:'Pending',milestones:[{name:'Proposal',done:true,date:'2025-02-01'},{name:'Literature Review',done:true,date:'2025-03-01'},{name:'System Design',done:true,date:'2025-04-01'},{name:'Implementation',done:false,date:'2025-06-01'},{name:'Testing',done:false,date:'2025-07-01'},{name:'Defense',done:false,date:'2025-08-15'}]},{id:2,title:'AI-Based Medical Diagnosis',student:'Fatima Rahman',supervisor:'Dr. Sarah Ahmed',status:'On Track',progress:40,proposal:'Approved',defense:'Scheduled',milestones:[{name:'Proposal',done:true,date:'2025-02-15'},{name:'Literature Review',done:true,date:'2025-03-15'},{name:'System Design',done:false,date:'2025-04-20'},{name:'Implementation',done:false,date:'2025-06-20'},{name:'Testing',done:false,date:'2025-07-20'},{name:'Defense',done:false,date:'2025-08-20'}]}];
 const DEMO_MATS = [{id:1,title:'Introduction to Neural Networks',course:'CSE401',type:'Lecture Slides',date:'2025-01-15',size:'2.4 MB'},{id:2,title:'Algorithm Analysis - Week 3',course:'CSE301',type:'Lecture Notes',date:'2025-01-20',size:'1.1 MB'},{id:3,title:'AI Ethics Reading List',course:'CSE401',type:'Reading List',date:'2025-01-25',size:'0.5 MB'},{id:4,title:'Lab Manual - Sorting Algorithms',course:'CSE301',type:'Lab Manual',date:'2025-02-01',size:'3.2 MB'}];
+const DEMO_DEADLINES = [{id:1, task:'Midterm Exam Grading', course:'CSE401', date:'2025-10-15', priority:'High'},{id:2, task:'Capstone Proposal Deadline', course:'CSE499', date:'2025-10-20', priority:'Medium'},{id:3, task:'Submit Final Grades', course:'All Courses', date:'2025-12-10', priority:'High'}];
 
 function Btn({children, onClick, variant='primary', disabled, size='md', icon:Icon, full, style={}}) {
   const base = {border:'none', cursor:disabled?'not-allowed':'pointer', borderRadius:8, fontFamily:FONT_SANS, fontWeight:600, display:'inline-flex', alignItems:'center', gap:8, opacity:disabled?0.5:1, transition:'all 0.2s', whiteSpace:'nowrap', letterSpacing: '0.02em'};
@@ -292,6 +307,18 @@ function TabBar({tabs, active, setActive}) {
 
 function Tag({label, color=C.accent}) {
   return <span style={{fontSize:11, padding:'4px 10px', borderRadius:20, background:`${color}20`, color, fontWeight:600, border:`1px solid ${color}40`, letterSpacing:'0.02em'}}>{label}</span>;
+}
+
+function Avatar({user, size=40, style={}}) {
+  const initials = (user?.name || user?.email || 'T').split(' ').filter(Boolean).map(w => w[0]).join('').slice(0,2).toUpperCase();
+  if (user?.avatar) {
+    return <img src={user.avatar} alt={user?.name || 'Profile'} style={{width:size, height:size, borderRadius:'50%', objectFit:'cover', flexShrink:0, ...style}}/>;
+  }
+  return (
+    <div style={{width:size, height:size, borderRadius:'50%', background:`linear-gradient(135deg, ${C.accent}, ${C.gold})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:Math.max(10, Math.round(size*0.35)), fontWeight:700, color:'#fff', flexShrink:0, ...style}}>
+      {initials}
+    </div>
+  );
 }
 
 function SectionHead({title, sub, action}) {
@@ -392,11 +419,10 @@ function LoginPage({onAuthSuccess}) {
           <div style={{display:'inline-flex', alignItems:'center', gap:14, marginBottom:20}}>
             <div style={{background:C.accent, borderRadius:12, padding:12, display:'flex', boxShadow: '0 4px 14px rgba(0,128,85,0.3)'}}><GraduationCap size={28} color="#fff"/></div>
             <div style={{textAlign:'left'}}>
-              <span style={{fontFamily:FONT_SERIF, fontSize:28, fontWeight:700, color:C.text, display:'block', lineHeight:1}}>DIU EduAI</span>
-              <span style={{fontSize:12, color:C.sub, fontWeight:500, letterSpacing:'0.05em'}}>DAFFODIL INTERNATIONAL UNIVERSITY</span>
+              <span style={{fontFamily:FONT_SERIF, fontSize:28, fontWeight:700, color:C.text, display:'block', lineHeight:1}}>EduAI</span>
             </div>
           </div>
-          <p style={{color:C.muted, fontSize:14, maxWidth:320, margin:'0 auto', lineHeight:1.6}}>Advanced AI Teaching & Assessment Portal for Faculty Members</p>
+          <p style={{color:C.muted, fontSize:14, maxWidth:320, margin:'0 auto', lineHeight:1.6}}>Advanced AI-Powered Teaching and Assessment Portal for Faculty Members</p>
         </div>
         <Card style={{padding:36}}>
           <div style={{display:'flex', gap:8, marginBottom:24, background:C.surface, padding:4, borderRadius:10}}>
@@ -433,7 +459,7 @@ function Sidebar({module, setModule, onLogout, user, onEditProfile}) {
           <div style={{background:C.accent, borderRadius:8, padding:7, display:'flex'}}><GraduationCap size={18} color="#000"/></div>
           <span style={{fontFamily:'"Playfair Display",serif', fontSize:20, fontWeight:700, color:C.text}}>EduAI</span>
         </div>
-        <div style={{fontSize:10, color:C.muted, marginTop:4, paddingLeft:2}}>AI Teaching Platform</div>
+        <div style={{fontSize:10, color:C.muted, marginTop:4, paddingLeft:2}}>Advanced AI-Powered Teaching and Assessment Portal for Faculty Members</div>
       </div>
       <nav style={{flex:1, padding:'12px 8px', overflowY:'auto'}}>
         {nav.map(n => {
@@ -452,9 +478,7 @@ function Sidebar({module, setModule, onLogout, user, onEditProfile}) {
           onMouseEnter={e => e.currentTarget.style.borderColor = C.accent}
           onMouseLeave={e => e.currentTarget.style.borderColor = 'transparent'}
         >
-          <div style={{width:32, height:32, borderRadius:'50%', background:C.accent, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'#000'}}>
-            {(user?.name || user?.email || 'T').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()}
-          </div>
+          <Avatar user={user} size={32} style={{fontSize:12, fontWeight:700}}/>
           <div style={{overflow:'hidden', flex:1}}> 
             <div style={{fontSize:12, fontWeight:600, color:C.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{user?.name || user?.email || 'Teacher'}</div> 
             <div style={{fontSize:10, color:C.muted}}>{user?.role || 'Professor'}, {user?.dept || 'CSE'}</div> 
@@ -516,9 +540,7 @@ function TopBar({user, module, onSearchOpen, notifications, onNotifToggle, notif
             </div>
           )}
         </div>
-        <div style={{width:40, height:40, borderRadius:'50%', background:`linear-gradient(135deg, ${C.accent}, ${C.gold})`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:'#fff', boxShadow:'0 4px 6px rgba(0,0,0,0.2)'}}>
-          {(user?.name || user?.email || 'T').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase()}
-        </div>
+        <Avatar user={user} size={40} style={{boxShadow:'0 4px 6px rgba(0,0,0,0.2)'}}/>
       </div>
     </div>
   );
@@ -607,7 +629,7 @@ function GlobalSearch({open, onClose, grades, courses, materials, projects}) {
 }
 
 // ===================== DASHBOARD =====================
-function DashboardHome({grades, courses, projects, setModule}) {
+function DashboardHome({grades, courses, projects, setModule, deadlines, setDeadlines}) {
   const aiTools = [
     {title:'Generate Quiz', desc:'Create quiz questions from any topic', icon:ClipboardList, color:C.accent, module:'teaching'},
     {title:'Draft Feedback', desc:'AI-assisted student feedback writing', icon:MessageCircle, color:C.blue, module:'teaching'},
@@ -617,11 +639,21 @@ function DashboardHome({grades, courses, projects, setModule}) {
     {title:'Screen Proposals', desc:'AI-assisted capstone proposal review', icon:Eye, color:C.red, module:'capstone'}
   ];
 
-  const deadlines = [
-    {id:1, task:'Midterm Exam Grading', course:'CSE401', date:'2025-10-15', priority:'High'},
-    {id:2, task:'Capstone Proposal Deadline', course:'CSE499', date:'2025-10-20', priority:'Medium'},
-    {id:3, task:'Submit Final Grades', course:'All Courses', date:'2025-12-10', priority:'High'}
-  ];
+  const [deadlineModal, setDeadlineModal] = useState(false);
+  const [deadlineForm, setDeadlineForm] = useState({task:'', course:'', date:'', priority:'Medium'});
+  const priorityColor = {High:C.red, Medium:C.gold, Low:C.blue};
+
+  function openAddDeadline() {
+    setDeadlineForm({task:'', course:'', date:new Date().toISOString().split('T')[0], priority:'Medium'});
+    setDeadlineModal(true);
+  }
+  function saveDeadline() {
+    if (!deadlineForm.task.trim() || !deadlineForm.date) return;
+    const next = [...deadlines, {...deadlineForm, id:Date.now()}].sort((a, b) => new Date(a.date) - new Date(b.date));
+    setDeadlines(next);
+    setDeadlineModal(false);
+  }
+  function delDeadline(id) { setDeadlines(deadlines.filter(d => d.id !== id)); }
 
   const pending = grades.filter(g => g.final === 0).length;
   
@@ -672,9 +704,14 @@ function DashboardHome({grades, courses, projects, setModule}) {
 
       <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:24, marginBottom:32}}>
         <div>
-          <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, display:'flex', alignItems:'center', gap:10, fontFamily:FONT_SERIF}}><Clock size={18} color={C.gold}/>Upcoming Deadlines</h3>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, display:'flex', alignItems:'center', gap:10, fontFamily:FONT_SERIF}}><Clock size={18} color={C.gold}/>Upcoming Deadlines</h3>
+            <Btn onClick={openAddDeadline} icon={Plus} size="sm" variant="secondary">Add Deadline</Btn>
+          </div>
           <Card style={{padding:0, overflow:'hidden'}}>
-            {deadlines.map((d, i) => (
+            {deadlines.length === 0 ? (
+              <div style={{padding:'24px 20px', textAlign:'center', color:C.muted, fontSize:13}}>No deadlines yet. Click "Add Deadline" to create one.</div>
+            ) : deadlines.map((d, i) => (
               <div key={d.id} style={{padding:'16px 20px', borderBottom: i < deadlines.length-1 ? `1px solid ${C.border}` : 'none', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                 <div>
                   <div style={{fontSize:14, fontWeight:500, color:C.text}}>{d.task}</div>
@@ -682,7 +719,8 @@ function DashboardHome({grades, courses, projects, setModule}) {
                 </div>
                 <div style={{display:'flex', alignItems:'center', gap:12}}>
                   <span style={{fontSize:12, color:C.sub}}>{d.date}</span>
-                  <Tag label={d.priority} color={d.priority==='High'?C.red:C.gold}/>
+                  <Tag label={d.priority} color={priorityColor[d.priority] || C.gold}/>
+                  <button onClick={() => delDeadline(d.id)} style={{background:'none', border:'none', color:C.muted, cursor:'pointer', display:'flex', padding:2}}><Trash2 size={14}/></button>
                 </div>
               </div>
             ))}
@@ -708,6 +746,26 @@ function DashboardHome({grades, courses, projects, setModule}) {
           </Card>
         ))}
       </div>
+
+      <Modal open={deadlineModal} onClose={() => setDeadlineModal(false)} title="Add Deadline" width={460}>
+        <Input label="Task" value={deadlineForm.task} onChange={v => setDeadlineForm({...deadlineForm, task:v})} placeholder="e.g. Submit Final Grades"/>
+        <Input label="Course" value={deadlineForm.course} onChange={v => setDeadlineForm({...deadlineForm, course:v})} placeholder="e.g. CSE401 or All Courses"/>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+          <Input label="Due Date" type="date" value={deadlineForm.date} onChange={v => setDeadlineForm({...deadlineForm, date:v})}/>
+          <div style={{marginBottom:18}}>
+            <label style={{display:'block', fontSize:12, color:C.sub, marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em'}}>Priority</label>
+            <select value={deadlineForm.priority} onChange={e => setDeadlineForm({...deadlineForm, priority:e.target.value})} style={{width:'100%', background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 14px', color:C.text, fontSize:14, fontFamily:'inherit', outline:'none'}}>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+        </div>
+        <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:12}}>
+          <Btn onClick={() => setDeadlineModal(false)} variant="ghost">Cancel</Btn>
+          <Btn onClick={saveDeadline} icon={Save}>Add Deadline</Btn>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -728,8 +786,8 @@ function TeachingModule({grades, setGrades, courses, attendance, setAttendance})
       <SectionHead title="Teaching & Assessment" sub="Manage evaluations, grades, attendance, and AI-powered tools."/>
       <TabBar tabs={tabs} active={tab} setActive={setTab}/>
       {tab === 'quiz' && <QuizGen courses={courses}/>}
-      {tab === 'gradebook' && <GradeBook grades={grades} setGrades={setGrades}/>}
-      {tab === 'attendance' && <AttendanceTracker grades={grades} attendance={attendance} setAttendance={setAttendance}/>}
+      {tab === 'gradebook' && <GradeBook grades={grades} setGrades={setGrades} onManageStudents={() => setTab('attendance')}/>}
+      {tab === 'attendance' && <AttendanceTracker grades={grades} setGrades={setGrades} attendance={attendance} setAttendance={setAttendance}/>}
       {tab === 'grader' && <AIGrader/>}
       {tab === 'feedback' && <FeedbackGen/>}
       {tab === 'analytics' && <Analytics grades={grades}/>}
@@ -748,15 +806,14 @@ function QuizGen({courses}) {
   );
 }
 
-function GradeBook({grades, setGrades}) {
+function GradeBook({grades, setGrades, onManageStudents}) {
   const [modal, setModal] = useState(false);
   const [edit, setEdit] = useState(null);
   const [form, setForm] = useState({student:'', sid:'', quiz1:0, quiz2:0, mid:0, assign:0, final:0});
   
-  function openAdd() { setForm({student:'', sid:'', quiz1:0, quiz2:0, mid:0, assign:0, final:0}); setEdit(null); setModal(true); }
   function openEdit(g) { setForm({...g}); setEdit(g.id); setModal(true); }
   function calcGrade(f) { const t = (+f.quiz1 + +f.quiz2) * 0.1 + (+f.assign) * 0.2 + (+f.mid) * 0.3 + (+f.final) * 0.4; if (t >= 90) return 'A+'; if (t >= 85) return 'A'; if (t >= 80) return 'A-'; if (t >= 75) return 'B+'; if (t >= 70) return 'B'; if (t >= 65) return 'B-'; if (t >= 60) return 'C+'; if (t >= 55) return 'C'; if (t >= 50) return 'D'; return 'F'; }
-  function save() { const g = calcGrade(form); if (edit) { setGrades(grades.map(x => x.id === edit ? {...form, grade:g} : x)); } else { setGrades([...grades, {...form, id:Date.now(), grade:g}]); } setModal(false); }
+  function save() { const g = calcGrade(form); setGrades(grades.map(x => x.id === edit ? {...form, grade:g} : x)); setModal(false); }
   function del(id) { setGrades(grades.filter(g => g.id !== id)); }
   const avg = g => ((+g.quiz1 + +g.quiz2) * 0.1 + (+g.assign) * 0.2 + (+g.mid) * 0.3 + (+g.final) * 0.4).toFixed(1);
   
@@ -776,10 +833,22 @@ function GradeBook({grades, setGrades}) {
 
   return (
     <div>
-      <div style={{display:'flex', justifyContent:'flex-end', gap:12, marginBottom:20}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, fontSize:13, color:C.muted}}>
+          <Users size={15} color={C.accent}/>
+          <span>Adding a new student? Manage your class roster from the <strong style={{color:C.text}}>Attendance</strong> tab.</span>
+          {onManageStudents && <button onClick={onManageStudents} style={{background:'none', border:'none', color:C.accent, cursor:'pointer', fontWeight:600, fontSize:13, textDecoration:'underline', padding:0}}>Go there</button>}
+        </div>
         <Btn onClick={exportCSV} icon={Download} variant="secondary">Export CSV</Btn>
-        <Btn onClick={openAdd} icon={Plus}>Add Student</Btn>
       </div>
+      {grades.length === 0 ? (
+        <Card style={{padding:40, textAlign:'center'}}>
+          <Users size={28} color={C.muted} style={{marginBottom:12}}/>
+          <div style={{color:C.sub, fontSize:14, marginBottom:16}}>No students yet. Add your first student from the Attendance tab and they'll appear here for grading.</div>
+          {onManageStudents && <Btn onClick={onManageStudents} icon={Plus}>Add Student in Attendance</Btn>}
+        </Card>
+      ) : (
+      <>
       <div style={{overflowX:'auto', border:`1px solid ${C.border}`, borderRadius:12}}>
         <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
           <thead>
@@ -815,7 +884,9 @@ function GradeBook({grades, setGrades}) {
         <span style={{fontSize:13, color:C.muted}}>Students: <strong style={{color:C.text}}>{grades.length}</strong></span>
         <span style={{fontSize:13, color:C.muted}}>Pending Finals: <strong style={{color:C.red}}>{grades.filter(g => g.final === 0).length}</strong></span>
       </div>
-      <Modal open={modal} onClose={() => setModal(false)} title={edit ? "Edit Student Record" : "Add Student Record"} width={500}>
+      </>
+      )}
+      <Modal open={modal} onClose={() => setModal(false)} title="Edit Student Record" width={500}>
         <Input label="Student Name" value={form.student} onChange={v => setForm({...form, student:v})} placeholder="Full name"/>
         <Input label="Student ID" value={form.sid} onChange={v => setForm({...form, sid:v})} placeholder="e.g. CSE2101"/>
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
@@ -837,20 +908,19 @@ function GradeBook({grades, setGrades}) {
   );
 }
 
-function AttendanceTracker({grades, attendance, setAttendance}) {
+function AttendanceTracker({grades, setGrades, attendance, setAttendance}) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [records, setRecords] = useState({});
   const [savedMsg, setSavedMsg] = useState('');
+  const [addModal, setAddModal] = useState(false);
+  const [newStudent, setNewStudent] = useState({student:'', sid:''});
+  const [addError, setAddError] = useState('');
 
   useEffect(() => {
     const existing = attendance.find(a => a.date === selectedDate);
-    if (existing) {
-      setRecords(existing.records);
-    } else {
-      const initial = {};
-      grades.forEach(g => initial[g.sid] = 'Present');
-      setRecords(initial);
-    }
+    const initial = {};
+    grades.forEach(g => { initial[g.sid] = (existing && existing.records[g.sid]) || 'Present'; });
+    setRecords(initial);
   }, [selectedDate, grades, attendance]);
 
   function toggleStatus(sid) {
@@ -869,16 +939,33 @@ function AttendanceTracker({grades, attendance, setAttendance}) {
     setTimeout(() => setSavedMsg(''), 3000);
   }
 
+  function openAddStudent() { setNewStudent({student:'', sid:''}); setAddError(''); setAddModal(true); }
+
+  function saveNewStudent() {
+    const student = newStudent.student.trim();
+    const sid = newStudent.sid.trim();
+    if (!student || !sid) { setAddError('Please enter both student name and ID.'); return; }
+    if (grades.some(g => g.sid.toLowerCase() === sid.toLowerCase())) { setAddError('A student with this ID already exists.'); return; }
+    setGrades([...grades, {id:Date.now(), student, sid, quiz1:0, quiz2:0, mid:0, assign:0, final:0, grade:'F'}]);
+    setAddModal(false);
+  }
+
   const statusColor = {'Present': C.green, 'Absent': C.red, 'Late': C.gold};
 
   return (
     <div>
-      <div style={{display:'flex', gap:16, marginBottom:20, alignItems:'flex-end'}}>
-        <Input label="Select Date" type="date" value={selectedDate} onChange={setSelectedDate} />
-        <Btn onClick={save} icon={Save} size="lg">Save Attendance</Btn>
-        {savedMsg && <span style={{color:C.green, fontSize:13, marginBottom:12}}>{savedMsg}</span>}
+      <div style={{display:'flex', gap:16, marginBottom:20, alignItems:'flex-end', justifyContent:'space-between', flexWrap:'wrap'}}>
+        <div style={{display:'flex', gap:16, alignItems:'flex-end'}}>
+          <Input label="Select Date" type="date" value={selectedDate} onChange={setSelectedDate} />
+          <Btn onClick={save} icon={Save} size="lg">Save Attendance</Btn>
+          {savedMsg && <span style={{color:C.green, fontSize:13, marginBottom:12}}>{savedMsg}</span>}
+        </div>
+        <Btn onClick={openAddStudent} icon={Plus} variant="secondary" size="lg">Add Student</Btn>
       </div>
       <Card>
+        {grades.length === 0 ? (
+          <div style={{padding:'32px 20px', textAlign:'center', color:C.sub, fontSize:14}}>No students yet. Click "Add Student" above to build your class roster &mdash; they'll also show up in the Grade Book.</div>
+        ) : (
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
             <thead>
@@ -916,7 +1003,19 @@ function AttendanceTracker({grades, attendance, setAttendance}) {
             </tbody>
           </table>
         </div>
+        )}
       </Card>
+
+      <Modal open={addModal} onClose={() => setAddModal(false)} title="Add Student" width={420}>
+        <Input label="Student Name" value={newStudent.student} onChange={v => setNewStudent({...newStudent, student:v})} placeholder="Full name"/>
+        <Input label="Student ID" value={newStudent.sid} onChange={v => setNewStudent({...newStudent, sid:v})} placeholder="e.g. CSE2106"/>
+        {addError && <div style={{color:C.red, fontSize:12, marginTop:-8, marginBottom:14}}>{addError}</div>}
+        <div style={{fontSize:12, color:C.muted, marginBottom:16}}>This student will be added to attendance and become available for grading in the Grade Book.</div>
+        <div style={{display:'flex', gap:12, justifyContent:'flex-end'}}>
+          <Btn onClick={() => setAddModal(false)} variant="ghost">Cancel</Btn>
+          <Btn onClick={saveNewStudent} icon={Save}>Add Student</Btn>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -988,6 +1087,11 @@ function Analytics({grades}) {
 }
 
 // ===================== CURRICULUM MODULE =====================
+function courseIdMatches(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
 function CurriculumModule({courses, setCourses, curriculumAssets, setCurriculumAssets}) {
   const [tab, setTab] = useState('mapping');
   const [addCourseModal, setAddCourseModal] = useState(false);
@@ -1007,13 +1111,19 @@ function CurriculumModule({courses, setCourses, curriculumAssets, setCurriculumA
     setNewCourse({code:'', name:'', credits:3, semester:'Fall 2025', students:0});
     setAddCourseModal(false);
   }
+  function deleteCourse(id) {
+    const target = courses.find(c => courseIdMatches(c.id, id));
+    if (!target) return;
+    if (!window.confirm(`Delete "${target.code}: ${target.name}"? All CLO-PLO mappings and syllabus data for this course will be removed.`)) return;
+    setCourses(courses.filter(c => !courseIdMatches(c.id, id)));
+  }
   return (
     <div className="fade-in">
       <SectionHead title="Curriculum Design & OBE Alignment" sub="Manage learning outcomes, syllabi, curriculum files, course documents, and program files according to BAET standards." action={<Btn onClick={() => setAddCourseModal(true)} icon={Plus}>Add Course</Btn>}/>
       <TabBar tabs={tabs} active={tab} setActive={setTab}/>
-      {tab === 'mapping' && <CLOPLOMapper courses={courses} setCourses={setCourses}/>}
-      {tab === 'syllabus' && <SyllabusManager courses={courses} setCourses={setCourses}/>}
-      {tab === 'assessment' && <AssessmentPlan courses={courses}/>}
+      {tab === 'mapping' && <CLOPLOMapper courses={courses} setCourses={setCourses} onDeleteCourse={deleteCourse}/>}
+      {tab === 'syllabus' && <SyllabusManager courses={courses} setCourses={setCourses} onDeleteCourse={deleteCourse}/>}
+      {tab === 'assessment' && <AssessmentPlan courses={courses} setCourses={setCourses} onDeleteCourse={deleteCourse}/>}
       {tab === 'repository' && <CurriculumRepository courses={courses} setCourses={setCourses} curriculumAssets={curriculumAssets} setCurriculumAssets={setCurriculumAssets}/>}
       {tab === 'gap' && <GapAnalyzer/>}
       {tab === 'trends' && <TrendAnalyzer/>}
@@ -1034,33 +1144,94 @@ function CurriculumModule({courses, setCourses, curriculumAssets, setCurriculumA
   );
 }
 
-function AssessmentPlan({courses}) {
+const DEFAULT_ASSESSMENTS = ['Midterm Exam', 'Final Project', 'Assignment 2'];
+const ASSESSMENT_PALETTE = [C.blue, C.purple, C.green, C.cyan, C.gold, C.red];
+
+function AssessmentPlan({courses, setCourses, onDeleteCourse}) {
   const [sel, setSel] = useState(courses[0]?.id || null);
-  const course = courses.find(c => c.id === sel);
+  const [addingFor, setAddingFor] = useState(null);
+  const [draft, setDraft] = useState('');
+  const course = courses.find(c => courseIdMatches(c.id, sel));
+  useEffect(() => {
+    if (sel != null && !courses.some(c => courseIdMatches(c.id, sel))) setSel(courses[0]?.id ?? null);
+  }, [courses, sel]);
+
+  useEffect(() => { setAddingFor(null); setDraft(''); }, [sel]);
+
+  function getAssessments(c, i) {
+    if (c?.assessmentMap && Array.isArray(c.assessmentMap[i])) return c.assessmentMap[i];
+    return DEFAULT_ASSESSMENTS;
+  }
+
+  function commitAdd(i) {
+    const label = draft.trim();
+    if (!label) { setAddingFor(null); setDraft(''); return; }
+    setCourses(courses.map(c => {
+      if (!courseIdMatches(c.id, sel)) return c;
+      const current = getAssessments(c, i);
+      if (current.some(a => a.toLowerCase() === label.toLowerCase())) return c;
+      return {...c, assessmentMap: {...(c.assessmentMap || {}), [i]: [...current, label]}};
+    }));
+    setDraft('');
+    setAddingFor(null);
+  }
+
+  function removeAssessment(i, label) {
+    setCourses(courses.map(c => {
+      if (!courseIdMatches(c.id, sel)) return c;
+      const current = getAssessments(c, i);
+      return {...c, assessmentMap: {...(c.assessmentMap || {}), [i]: current.filter(a => a !== label)}};
+    }));
+  }
+
   return (
     <div>
-      <div style={{marginBottom:24}}>
-        <select value={sel} onChange={e => setSel(+e.target.value)} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, outline:'none'}}>
+      <div style={{marginBottom:24, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+        <select value={sel ?? ''} onChange={e => { const matched = courses.find(c => courseIdMatches(c.id, e.target.value)); setSel(matched?.id ?? null); }} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, outline:'none'}}>
           {courses.map(c => <option key={c.id} value={c.id}>{c.code}: {c.name}</option>)}
         </select>
+        {onDeleteCourse && courses.length > 0 && (
+          <Btn onClick={() => onDeleteCourse(sel)} icon={Trash2} variant="ghost" size="sm" disabled={!sel} style={{color:C.red}}>Delete Course</Btn>
+        )}
       </div>
       <Card>
         <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Assessment Method Mapping</h3>
         <p style={{fontSize:13, color:C.muted, marginBottom:20}}>Map your Course Learning Outcomes (CLOs) to specific assessment methods to ensure OBE compliance.</p>
         {course?.clos?.length > 0 ? (
           <div style={{display:'flex', flexDirection:'column', gap:16}}>
-            {course.clos.map((clo, i) => (
-              <div key={i} style={{padding:16, background:C.surface, borderRadius:10, border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:14, fontWeight:600, color:C.accent, marginBottom:8}}>CLO {i+1}</div>
-                <div style={{fontSize:13, color:C.sub, marginBottom:12}}>{typeof clo === 'string' ? clo : clo.description}</div>
-                <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-                  <Tag label="Midterm Exam" color={C.blue}/>
-                  <Tag label="Final Project" color={C.purple}/>
-                  <Tag label="Assignment 2" color={C.green}/>
-                  <button style={{background:'transparent', border:`1px dashed ${C.border}`, color:C.muted, borderRadius:20, padding:'4px 12px', fontSize:11, cursor:'pointer'}}>+ Add Assessment</button>
+            {course.clos.map((clo, i) => {
+              const assessments = getAssessments(course, i);
+              return (
+                <div key={i} style={{padding:16, background:C.surface, borderRadius:10, border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:14, fontWeight:600, color:C.accent, marginBottom:8}}>CLO {i+1}</div>
+                  <div style={{fontSize:13, color:C.sub, marginBottom:12}}>{typeof clo === 'string' ? clo : clo.description}</div>
+                  <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+                    {assessments.map((a, ai) => (
+                      <span key={a} style={{display:'inline-flex', alignItems:'center', gap:4, background:`${ASSESSMENT_PALETTE[ai % ASSESSMENT_PALETTE.length]}20`, border:`1px solid ${ASSESSMENT_PALETTE[ai % ASSESSMENT_PALETTE.length]}40`, borderRadius:20, padding:'4px 6px 4px 10px'}}>
+                        <span style={{fontSize:11, fontWeight:600, color:ASSESSMENT_PALETTE[ai % ASSESSMENT_PALETTE.length], letterSpacing:'0.02em'}}>{a}</span>
+                        <button onClick={() => removeAssessment(i, a)} title={`Remove ${a}`} style={{background:'none', border:'none', color:ASSESSMENT_PALETTE[ai % ASSESSMENT_PALETTE.length], cursor:'pointer', display:'flex', alignItems:'center', padding:2, opacity:0.8}}><X size={11}/></button>
+                      </span>
+                    ))}
+                    {addingFor === i ? (
+                      <span style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                        <input
+                          autoFocus
+                          value={draft}
+                          onChange={e => setDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitAdd(i); if (e.key === 'Escape') { setAddingFor(null); setDraft(''); } }}
+                          placeholder="e.g. Quiz 3"
+                          style={{background:C.card, border:`1px solid ${C.border}`, borderRadius:20, padding:'5px 12px', fontSize:11, color:C.text, outline:'none', width:130}}
+                        />
+                        <button onClick={() => commitAdd(i)} style={{background:C.accent, border:'none', color:'#fff', borderRadius:20, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer'}}>Add</button>
+                        <button onClick={() => { setAddingFor(null); setDraft(''); }} style={{background:'transparent', border:'none', color:C.muted, cursor:'pointer', fontSize:11}}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => { setAddingFor(i); setDraft(''); }} style={{background:'transparent', border:`1px dashed ${C.border}`, color:C.muted, borderRadius:20, padding:'4px 12px', fontSize:11, cursor:'pointer'}}>+ Add Assessment</button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div style={{textAlign:'center', padding:30, color:C.muted}}>No CLOs defined for this course. Please add CLOs in the CLO-PLO Mapping tab.</div>
@@ -1178,9 +1349,12 @@ function CurriculumRepository({courses, setCourses, curriculumAssets, setCurricu
   );
 }
 
-function CLOPLOMapper({courses, setCourses}) {
-  const [sel, setSel] = useState(courses[0]?.id || null);
-  const course = courses.find(c => c.id === sel);
+function CLOPLOMapper({courses, setCourses, onDeleteCourse}) {
+  const [sel, setSel] = useState(courses[0]?.id ?? null);
+  const selRef = useRef(sel);
+  useEffect(() => { selRef.current = sel; }, [sel]);
+  const course = courses.find(c => courseIdMatches(c.id, sel));
+
   const PLOS = [
     {id:'PO1', desc:'Apply knowledge of mathematics, natural science, computing, engineering fundamentals and an engineering specialization as specified in WK1 to WK4 respectively to develop solutions of complex engineering problems.'},
     {id:'PO2', desc:'Identify, formulate, research literature and analyze complex engineering problems reaching substantiated conclusions using first principles of mathematics, natural sciences and engineering sciences with holistic considerations for sustainable development (WK 1 to WK4).'},
@@ -1191,62 +1365,285 @@ function CLOPLOMapper({courses, setCourses}) {
     {id:'PO7', desc:'Apply ethical principles and commit to professional ethics and norms of engineering practice and adhere to relevant national and international laws. Demonstrate an understanding of the need for diversity and inclusion (WK9).'},
     {id:'PO8', desc:'Function effectively as an individual, and as a member or leader in diverse and inclusive teams and in multi-disciplinary, face-to-face, remote and distributed settings (WK9).'},
     {id:'PO9', desc:'Communicate effectively and inclusively on complex engineering activities with the engineering community and with society at large, such as being able to comprehend and write effective reports and design documentation, make effective presentations, taking into account cultural, language, and learning differences.'},
-    {id:'PO10', desc:'Apply knowledge and understanding of engineering management principles and economic decision-making and apply these to one\'s own work, as a member and leader in a team and to manage projects and in multidisciplinary environments.'},
+    {id:'PO10', desc:"Apply knowledge and understanding of engineering management principles and economic decision-making and apply these to one's own work, as a member and leader in a team and to manage projects and in multidisciplinary environments."},
     {id:'PO11', desc:'Recognize the need for, and have the preparation and ability for i) independent and life-long learning ii) adaptability to new and emerging technologies and iii) critical thinking in the broadest context of technological change (WK8).'},
     {id:'PO12', desc:'Demonstrate knowledge and understanding of the competences necessary to transform opportunities and ideas into a new business.'},
   ];
+
+  const [pdfFile, setPdfFile] = useState(null);
+  const [extractedCLOs, setExtractedCLOs] = useState([]);
+  const [cloMappings, setCloMappings] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState('');
+  const [error, setError] = useState('');
+  const [mappingDone, setMappingDone] = useState(false);
+
+  // Keep selection valid when course list changes (e.g. delete)
+  useEffect(() => {
+    if (sel != null && !courses.some(c => courseIdMatches(c.id, sel))) setSel(courses[0]?.id ?? null);
+  }, [courses, sel]);
+
+  // Restore saved mapping when course selection or course data changes
+  useEffect(() => {
+    const c = courses.find(x => courseIdMatches(x.id, sel));
+    if (c && Array.isArray(c.extractedCLOObjects) && c.extractedCLOObjects.length > 0) {
+      setExtractedCLOs(c.extractedCLOObjects);
+      setCloMappings(c.mapping || {});
+      setMappingDone(Object.keys(c.mapping || {}).length > 0);
+    } else {
+      setExtractedCLOs([]);
+      setCloMappings({});
+      setMappingDone(false);
+    }
+    setPdfFile(null);
+    setError('');
+    setStep('');
+  }, [sel, courses]);
+
+  async function extractPdfText(file) {
+    const pdfjsLib = await import('pdfjs-dist');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '\n';
+    }
+    return text.trim();
+  }
+
+  async function handlePdfUpload(file) {
+    if (!file || sel == null) return;
+    const targetId = sel;
+    setError(''); setPdfFile(file); setExtractedCLOs([]); setCloMappings({}); setMappingDone(false);
+    setLoading(true); setStep('Extracting text from PDF...');
+    try {
+      const text = await extractPdfText(file);
+      if (!text || text.length < 20) throw new Error('Could not extract enough text from this PDF. Ensure the file contains selectable text (not a scanned image).');
+      setStep('Analyzing CLOs with AI...');
+      const cloPrompt = `You are an expert in academic curriculum design. The following text was extracted from a PDF document that contains Course Learning Outcomes (CLOs). Extract ALL the CLOs from this text. Return ONLY a valid JSON array of objects. Each object must have: "id" (like "CLO1", "CLO2", etc.) and "description" (the full CLO text). Example format: [{"id":"CLO1","description":"..."},{"id":"CLO2","description":"..."}]. Do NOT include any other text, explanation or markdown formatting. Just the JSON array.\n\nExtracted PDF text:\n${text.substring(0,6000)}`;
+      const cloResult = await ai(cloPrompt, 'You extract CLOs from academic documents. Return ONLY valid JSON arrays, no markdown, no explanation.');
+      let clos = [];
+      try {
+        const cleaned = cloResult.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+        clos = JSON.parse(cleaned);
+      } catch { throw new Error('AI could not parse CLOs from this document. The PDF may not contain clearly defined CLOs.'); }
+      if (!Array.isArray(clos) || clos.length === 0) throw new Error('No CLOs found in the document.');
+      setStep('Mapping CLOs to PLOs...');
+      const ploList = PLOS.map(p => `${p.id}: ${p.desc}`).join('\n');
+      const mapPrompt = `You are an expert in OBE (Outcome-Based Education) curriculum alignment. Map each CLO to exactly one PLO using a STRICT ONE-TO-ONE rule:\n- Each CLO maps to exactly ONE PLO.\n- Each PLO can be used by AT MOST ONE CLO. No two CLOs may share the same PLO.\n- If there are more CLOs than PLOs, leave extra CLOs unmapped (set value to null).\n- Spread CLOs across different PLOs. Never assign the same PLO to multiple CLOs.\n\nReturn ONLY a valid JSON object where keys are CLO ids and values are single PLO ids (e.g. {"CLO1":"PO3","CLO2":"PO1","CLO3":"PO7"}). Every PLO value MUST be unique.\n\nCLOs:\n${clos.map(c => `${c.id}: ${c.description}`).join('\n')}\n\nPLOs:\n${ploList}\n\nReturn ONLY the JSON object. Each PLO must appear at most once across all values.`;
+      const mapResult = await ai(mapPrompt, 'You are a curriculum mapping expert. Return ONLY valid JSON. CRITICAL RULE: Each PLO id must appear AT MOST ONCE across all values. No two CLOs can share the same PLO.');
+      let mappings = {};
+      try {
+        const cleaned = mapResult.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+        mappings = JSON.parse(cleaned);
+      } catch { throw new Error('AI could not generate the mapping. Please try again.'); }
+      const usedPLOs = new Set();
+      const dedupedMappings = {};
+      for (const cloId of Object.keys(mappings)) {
+        const ploId = mappings[cloId];
+        if (ploId && !usedPLOs.has(ploId)) { usedPLOs.add(ploId); dedupedMappings[cloId] = ploId; }
+      }
+      const cloStrings = clos.map(c => `${c.id}: ${c.description}`);
+      if (setCourses) {
+        setCourses(prev => prev.map(c => courseIdMatches(c.id, targetId) ? {...c, clos: cloStrings, mapping: dedupedMappings, extractedCLOObjects: clos, cloDocument: file.name} : c));
+      }
+      if (courseIdMatches(selRef.current, targetId)) {
+        setExtractedCLOs(clos);
+        setCloMappings(dedupedMappings);
+        setMappingDone(true);
+      }
+      setStep('');
+    } catch (err) {
+      setError(err.message || 'An error occurred during processing.');
+    } finally { setLoading(false); setStep(''); }
+  }
+
+  const mappedPLOIds = new Set(Object.values(cloMappings));
+
   return (
     <div>
-      <div style={{marginBottom:24, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'}}>
-        <select value={sel} onChange={e => setSel(+e.target.value)} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, fontFamily:FONT_SANS, cursor:'pointer', outline:'none'}}>
+      {/* Course selector */}
+      <div style={{marginBottom:20, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'}}>
+        <select value={sel ?? ''} onChange={e => { const matched = courses.find(c => courseIdMatches(c.id, e.target.value)); setSel(matched?.id ?? null); }} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, fontFamily:FONT_SANS, cursor:'pointer', outline:'none'}}>
           {courses.map(c => <option key={c.id} value={c.id}>{c.code}: {c.name}</option>)}
         </select>
+        {onDeleteCourse && courses.length > 0 && (
+          <Btn onClick={() => onDeleteCourse(sel)} icon={Trash2} variant="ghost" size="sm" disabled={!sel} style={{color:C.red}}>Delete Course</Btn>
+        )}
       </div>
-      {course && (
-        <div>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:24, marginBottom:24}}>
-            <Card>
-              <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Course Learning Outcomes (CLOs)</h3>
-              {(course.clos || []).length > 0 ? (course.clos || []).map((clo, i) => {
-                const cloText = typeof clo === 'string' ? clo.replace(/^CLO\d+:\s*/, '') : (clo.description || String(clo));
-                return <div key={i} style={{padding:'12px 14px', background:C.surface, borderRadius:8, marginBottom:10, fontSize:13, color:C.text, border:`1px solid ${C.border}`, borderLeft:`4px solid ${C.accent}`}}><span style={{color:C.accent, fontWeight:700}}>CLO{i+1}</span> {'\u2014'} {cloText}</div>;
-              }) : (
-                <div style={{padding:20, background:C.surface, borderRadius:8, border:`1px dashed ${C.border}`, textAlign:'center'}}>
-                  <p style={{fontSize:13, color:C.muted, marginBottom:6}}>No CLOs uploaded yet</p>
-                  <p style={{fontSize:12, color:C.muted}}>Upload a CLO PDF in Course & Program Uploads</p>
-                </div>
-              )}
-            </Card>
-            <Card>
-              <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Program Outcomes (PO1{'\u2013'}PO12)</h3>
-              {PLOS.map(plo => (
-                <div key={plo.id} style={{padding:'12px 14px', background:C.surface, borderRadius:8, marginBottom:10, fontSize:12, color:C.muted, border:`1px solid ${C.border}`, display:'flex', gap:10, alignItems:'flex-start'}}>
-                  <span style={{fontWeight:700, flexShrink:0}}>{plo.id}</span>
-                  <span style={{lineHeight:1.5}}>{plo.desc.length > 120 ? plo.desc.substring(0,120) + '...' : plo.desc}</span>
+
+      {/* PDF Upload */}
+      <Card style={{marginBottom:20, border:`1px dashed ${C.accent}44`, background:`${C.accent}08`}}>
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:14}}>
+          <div style={{background:`${C.accent}22`, borderRadius:8, padding:8, display:'flex'}}><Upload size={18} color={C.accent}/></div>
+          <div>
+            <h3 style={{fontSize:14, fontWeight:700, color:C.text}}>Upload CLO Document (PDF)</h3>
+            <p style={{fontSize:11, color:C.muted, marginTop:2}}>Upload a PDF containing Course Learning Outcomes. AI will extract CLOs and auto-map each to the most relevant PLO.</p>
+          </div>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+          <label style={{display:'inline-flex', alignItems:'center', gap:8, padding:'10px 18px', background:C.accent, color:'#000', borderRadius:8, fontWeight:600, fontSize:13, cursor:loading?'not-allowed':'pointer', opacity:loading?0.5:1}}>
+            <Upload size={14}/>{loading ? 'Processing...' : 'Choose PDF File'}
+            <input type="file" accept=".pdf,application/pdf" onChange={e => handlePdfUpload(e.target.files?.[0])} style={{display:'none'}} disabled={loading}/>
+          </label>
+          {pdfFile && <span style={{fontSize:12, color:C.sub}}>{pdfFile.name}</span>}
+          {course?.cloDocument && !pdfFile && <span style={{fontSize:12, color:C.green, display:'flex', alignItems:'center', gap:6}}><CheckCircle size={13} color={C.green}/> Saved: {course.cloDocument}</span>}
+          {loading && <span style={{fontSize:12, color:C.accent, display:'flex', alignItems:'center', gap:6}}><Loader size={13} color={C.accent}/>{step}</span>}
+        </div>
+        {error && <div style={{marginTop:12, background:`${C.red}18`, border:`1px solid ${C.red}44`, borderRadius:8, padding:'10px 14px', color:C.red, fontSize:12}}>{error}</div>}
+      </Card>
+
+      {/* CLO list + PO list */}
+      {extractedCLOs.length > 0 && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:24, marginBottom:24}}>
+          <Card>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:8, fontFamily:FONT_SERIF}}>Course Learning Outcomes (CLOs)</h3>
+            <p style={{fontSize:12, color:C.muted, marginBottom:14}}>{extractedCLOs.length} CLOs{course?.cloDocument ? ` from "${course.cloDocument}"` : ''}</p>
+            <div style={{maxHeight:420, overflowY:'auto'}}>
+              {extractedCLOs.map((clo, i) => (
+                <div key={i} style={{padding:'10px 12px', background:C.surface, borderRadius:8, marginBottom:8, fontSize:13, color:C.text, border:`1px solid ${C.border}`, borderLeft:`4px solid ${C.accent}`}}>
+                  <span style={{color:C.accent, fontWeight:700}}>{clo.id}</span> {'\u2014'} {clo.description}
                 </div>
               ))}
-            </Card>
+            </div>
+          </Card>
+          <Card>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:8, fontFamily:FONT_SERIF}}>Program Outcomes (PO1{'\u2013'}PO12)</h3>
+            <p style={{fontSize:12, color:C.muted, marginBottom:14}}>Green = mapped by a CLO</p>
+            <div style={{maxHeight:420, overflowY:'auto'}}>
+              {PLOS.map(plo => {
+                const mapped = mappedPLOIds.has(plo.id);
+                return (
+                  <div key={plo.id} style={{padding:'10px 12px', background:mapped?`${C.green}15`:C.surface, borderRadius:8, marginBottom:8, fontSize:12, color:mapped?C.text:C.muted, border:`1px solid ${mapped?C.green+'44':C.border}`, display:'flex', gap:8, alignItems:'flex-start'}}>
+                    <span style={{fontWeight:700, color:mapped?C.green:C.muted, flexShrink:0}}>{plo.id}</span>
+                    <span style={{lineHeight:1.4}}>{plo.desc.length > 120 ? plo.desc.substring(0,120)+'...' : plo.desc}</span>
+                    {mapped && <CheckCircle size={13} color={C.green} style={{flexShrink:0, marginTop:2}}/>}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Mapping Matrix */}
+      {mappingDone && (
+        <Card style={{marginBottom:24}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, fontFamily:FONT_SERIF}}>CLO {'\u2192'} PLO Mapping Matrix</h3>
+            <Tag label={`${extractedCLOs.length} CLOs \u00d7 ${PLOS.length} POs`} color={C.accent}/>
           </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{borderCollapse:'collapse', fontSize:12, width:'100%'}}>
+              <thead>
+                <tr>
+                  <th style={{padding:'10px 14px', textAlign:'left', color:C.muted, borderBottom:`2px solid ${C.border}`, minWidth:90, position:'sticky', left:0, background:C.card, zIndex:1, fontSize:11, textTransform:'uppercase', letterSpacing:'0.05em'}}>CLO</th>
+                  {PLOS.map(p => <th key={p.id} style={{padding:'10px 6px', color:C.muted, borderBottom:`2px solid ${C.border}`, textAlign:'center', whiteSpace:'nowrap', fontSize:10, textTransform:'uppercase'}}>{p.id}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {extractedCLOs.map((clo, ci) => (
+                  <tr key={ci} style={{borderBottom:`1px solid ${C.border}`, background:ci%2===0?C.card:C.surface}}>
+                    <td style={{padding:'10px 14px', color:C.text, fontWeight:600, position:'sticky', left:0, background:ci%2===0?C.card:C.surface, zIndex:1, whiteSpace:'nowrap'}} title={clo.description}>{clo.id}</td>
+                    {PLOS.map(p => {
+                      const mapped = cloMappings[clo.id] === p.id;
+                      return (
+                        <td key={p.id} style={{textAlign:'center', padding:'10px 6px'}}>
+                          {mapped
+                            ? <div style={{width:22, height:22, background:C.green, borderRadius:5, display:'inline-flex', alignItems:'center', justifyContent:'center'}}><CheckCircle size={13} color="#fff"/></div>
+                            : <div style={{width:22, height:22, background:C.border, borderRadius:5, display:'inline-block', opacity:0.25}}/>
+                          }
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Detailed mapping cards */}
+      {mappingDone && (
+        <Card>
+          <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Detailed CLO {'\u2192'} PLO Mapping</h3>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+            {extractedCLOs.map(clo => {
+              const poId = cloMappings[clo.id];
+              const po = PLOS.find(p => p.id === poId);
+              return (
+                <div key={clo.id} style={{padding:16, background:C.surface, borderRadius:10, border:`1px solid ${C.border}`}}>
+                  <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+                    <Tag label={clo.id} color={C.accent}/>
+                    <ChevronRight size={12} color={C.muted}/>
+                    <Tag label={poId || 'N/A'} color={poId ? C.green : C.red}/>
+                  </div>
+                  <div style={{fontSize:12, color:C.sub, lineHeight:1.5, marginBottom:8}}><strong style={{color:C.text}}>CLO:</strong> {clo.description}</div>
+                  {po && <div style={{fontSize:12, color:C.muted, lineHeight:1.5}}><strong style={{color:C.sub}}>PLO:</strong> {po.desc.length > 160 ? po.desc.substring(0,160)+'...' : po.desc}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Fallback: course has CLOs but no extractedCLOObjects */}
+      {!mappingDone && extractedCLOs.length === 0 && course && (course.clos || []).length > 0 && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:24, marginBottom:24}}>
+          <Card>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Course Learning Outcomes (CLOs)</h3>
+            {(course.clos || []).map((clo, i) => {
+              const cloText = typeof clo === 'string' ? clo.replace(/^CLO\d+:\s*/, '') : (clo.description || String(clo));
+              return <div key={i} style={{padding:'12px 14px', background:C.surface, borderRadius:8, marginBottom:10, fontSize:13, color:C.text, border:`1px solid ${C.border}`, borderLeft:`4px solid ${C.accent}`}}><span style={{color:C.accent, fontWeight:700}}>CLO{i+1}</span> {'\u2014'} {cloText}</div>;
+            })}
+          </Card>
+          <Card>
+            <h3 style={{fontSize:16, fontWeight:600, color:C.text, marginBottom:16, fontFamily:FONT_SERIF}}>Program Outcomes (PO1{'\u2013'}PO12)</h3>
+            {PLOS.map(plo => (
+              <div key={plo.id} style={{padding:'12px 14px', background:C.surface, borderRadius:8, marginBottom:10, fontSize:12, color:C.muted, border:`1px solid ${C.border}`, display:'flex', gap:10, alignItems:'flex-start'}}>
+                <span style={{fontWeight:700, flexShrink:0}}>{plo.id}</span>
+                <span style={{lineHeight:1.5}}>{plo.desc.length > 120 ? plo.desc.substring(0,120)+'...' : plo.desc}</span>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!mappingDone && extractedCLOs.length === 0 && course && (course.clos || []).length === 0 && (
+        <div style={{padding:32, background:C.surface, borderRadius:12, border:`1px dashed ${C.border}`, textAlign:'center'}}>
+          <p style={{fontSize:14, color:C.muted, marginBottom:8}}>No CLOs uploaded yet</p>
+          <p style={{fontSize:13, color:C.muted}}>Upload a CLO PDF above to automatically extract and map CLOs to PLOs.</p>
         </div>
       )}
     </div>
   );
 }
 
-function SyllabusManager({courses, setCourses}) {
-  const [sel, setSel] = useState(courses[0]?.id || null);
+function SyllabusManager({courses, setCourses, onDeleteCourse}) {
+  const [sel, setSel] = useState(courses[0]?.id ?? null);
   const [editing, setEditing] = useState(false);
-  const course = courses.find(c => c.id === sel);
+  const course = courses.find(c => courseIdMatches(c.id, sel));
   const [form, setForm] = useState({});
+  useEffect(() => {
+    if (sel != null && !courses.some(c => courseIdMatches(c.id, sel))) setSel(courses[0]?.id ?? null);
+  }, [courses, sel]);
   function startEdit() { setForm({...course}); setEditing(true); }
-  function save() { setCourses(courses.map(c => c.id === sel ? {...c, ...form} : c)); setEditing(false); }
+  function save() { setCourses(courses.map(c => courseIdMatches(c.id, sel) ? {...c, ...form} : c)); setEditing(false); }
   const courseClos = course?.clos || [];
   return (
     <div>
-      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:24}}>
-        <select value={sel} onChange={e => setSel(+e.target.value)} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, fontFamily:FONT_SANS, cursor:'pointer', outline:'none'}}>
+      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:24, flexWrap:'wrap'}}>
+        <select value={sel ?? ''} onChange={e => { const matched = courses.find(c => courseIdMatches(c.id, e.target.value)); setSel(matched?.id ?? null); }} style={{background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 16px', color:C.text, fontSize:14, fontFamily:FONT_SANS, cursor:'pointer', outline:'none'}}>
           {courses.map(c => <option key={c.id} value={c.id}>{c.code}: {c.name}</option>)}
         </select>
+        {onDeleteCourse && courses.length > 0 && (
+          <Btn onClick={() => onDeleteCourse(sel)} icon={Trash2} variant="ghost" size="sm" disabled={!sel} style={{color:C.red}}>Delete Course</Btn>
+        )}
         {!editing && <Btn onClick={startEdit} icon={Edit3} variant="secondary" size="sm">Edit Syllabus</Btn>}
         {editing && <><Btn onClick={save} icon={Save} size="sm">Save Changes</Btn><Btn onClick={() => setEditing(false)} variant="ghost" size="sm">Cancel</Btn></>}
       </div>
@@ -1496,7 +1893,7 @@ function CapstoneModule({projects, setProjects, capstoneSubmissions, setCapstone
   const tabs = [
     {id:'projects', icon:Database, label:'Project Tracker'},
     {id:'milestones', icon:Calendar, label:'Milestones'},
-    {id:'uploads', icon:Upload, label:'Student Uploads'},
+    {id:'uploads', icon:Upload, label:'AI Plagiarism/Originality Screener'},
     {id:'meetings', icon:MessageCircle, label:'Meeting Logs'},
     {id:'screen', icon:Eye, label:'AI Proposal Screener'},
     {id:'eval', icon:CheckSquare, label:'Evaluation & Rubrics'},
@@ -1589,24 +1986,51 @@ function MeetingLogs({projects, meetingLogs, setMeetingLogs}) {
   );
 }
 
+function riskColor(item) {
+  const lvl = item?.screening?.riskLevel || (item?.plagiarismStatus?.includes('High') ? 'High' : item?.plagiarismStatus?.includes('Medium') ? 'Medium' : item?.plagiarismStatus?.includes('Low') ? 'Low' : null);
+  if (lvl === 'High') return C.red;
+  if (lvl === 'Medium') return C.gold;
+  if (lvl === 'Low') return C.green;
+  return C.muted;
+}
+
 function CapstoneSubmissionCenter({submissions, setSubmissions}) {
   const [modal, setModal] = useState(false);
   const [viewer, setViewer] = useState(null);
   const [checking, setChecking] = useState(null);
-  const [form, setForm] = useState({student:'', title:'', supervisor:'', abstract:'', file:null, fileName:'', fileUrl:'', fileType:'', notes:'', report:'', provider:'groq', storagePath:'', storageProvider:'local'});
+  const emptyForm = {student:'', title:'', supervisor:'', abstract:'', file:null, fileName:'', fileUrl:'', fileType:'', notes:'', report:'', screening:null, provider:'groq', storagePath:'', storageProvider:'local', extractionNote:''};
+  const [form, setForm] = useState(emptyForm);
   async function onPickFile(file) {
     if (!file) return;
+    const kind = fileKind(file);
+    setForm(prev => ({...prev, file, fileName:file.name, fileType:kind, extractionNote:'Reading file for automatic text extraction...'}));
     try {
       const uploaded = await uploadManagedFile(file, 'capstone');
-      setForm(prev => ({...prev, file, fileName:file.name, fileUrl:uploaded.fileUrl, fileType:fileKind(file), storagePath:uploaded.storagePath, storageProvider:uploaded.storageProvider}));
-    } catch(e) {
-      setForm(prev => ({...prev, file, fileName:file.name, fileType:fileKind(file)}));
+      setForm(prev => ({...prev, fileUrl:uploaded.fileUrl, storagePath:uploaded.storagePath, storageProvider:uploaded.storageProvider}));
+    } catch(e) { /* storage upload failed; file stays local-only, extraction can still proceed */ }
+    try {
+      if (kind === 'text') {
+        const text = await fileToText(file);
+        setForm(prev => ({...prev, abstract: prev.abstract.trim() ? prev.abstract : text.slice(0, 12000), extractionNote: `Auto-extracted ${text.length.toLocaleString()} characters from the text file into the field below. Feel free to edit it.`}));
+      } else if (kind === 'pdf') {
+        const text = await extractTextFromPdf(file);
+        if (text && text.trim().length > 20) {
+          setForm(prev => ({...prev, abstract: prev.abstract.trim() ? prev.abstract : text.slice(0, 12000), extractionNote: `Auto-extracted ${text.length.toLocaleString()} characters from the PDF into the field below. Feel free to edit it.`}));
+        } else {
+          setForm(prev => ({...prev, extractionNote: 'Could not extract selectable text from this PDF (it may be a scanned image). Paste the abstract or key text below for an accurate screening.'}));
+        }
+      } else {
+        setForm(prev => ({...prev, extractionNote: 'Automatic text extraction currently supports PDF and plain-text files. For Word/PowerPoint/Excel files, paste the abstract or key text below for an accurate screening.'}));
+      }
+    } catch (e) {
+      setForm(prev => ({...prev, extractionNote: 'Automatic text extraction failed for this file. Paste the abstract or key text below instead.'}));
     }
   }
-  function resetForm() { setForm({student:'', title:'', supervisor:'', abstract:'', file:null, fileName:'', fileUrl:'', fileType:'', notes:'', report:'', provider:'groq', storagePath:'', storageProvider:'local'}); }
+  function resetForm() { setForm(emptyForm); }
   function add() {
     if (!form.title.trim() && !form.student.trim()) return;
-    const item = {...form, id:Date.now(), date:new Date().toISOString().split('T')[0], size: form.file ? prettySize(form.file.size) : 'N/A', plagiarismStatus:'Not checked', report:''};
+    const {extractionNote, ...rest} = form;
+    const item = {...rest, id:Date.now(), date:new Date().toISOString().split('T')[0], size: form.file ? prettySize(form.file.size) : 'N/A', plagiarismStatus:'Not checked', report:'', screening:null, checkedAt:null};
     setSubmissions([...submissions, item]);
     setModal(false);
     resetForm();
@@ -1615,23 +2039,44 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
   function open(item) { setViewer(item); }
   async function analyze(item) {
     setChecking(item.id);
-    const sourceText = [item.abstract, item.notes].filter(Boolean).join('\n\n');
-    const prompt = `You are an academic originality screening assistant. Review this student capstone submission and give a plagiarism/originality risk assessment. Be careful not to claim access to a plagiarism database or exact-match index. Focus on red flags, citation problems, style inconsistencies, patchwriting risk, and suggestions for revision. Return concise sections: 1) Overall risk (Low/Medium/High), 2) Reasons, 3) Likely issues, 4) Improvement suggestions, 5) A short disclaimer that this is a heuristic AI screening and not a definitive plagiarism report.\n\nSubmission metadata:\nTitle: ${item.title || 'N/A'}\nStudent: ${item.student || 'N/A'}\nSupervisor: ${item.supervisor || 'N/A'}\nFile: ${item.fileName || 'No file attached'} (${item.fileType || 'unknown'})\n\nStudent provided text / abstract:\n${sourceText || 'No extracted text was provided. Use the file metadata and title to give a cautious, limited-scope screening.'}`;
-    const report = await ai(prompt, 'You are an academic originality screening assistant. Never state certainty beyond the evidence provided. Do not pretend to run a database similarity scan. Clearly label the output as a heuristic screening.', item.provider || 'groq');
-    setSubmissions(submissions.map(s => s.id === item.id ? {...s, report, plagiarismStatus: report.toLowerCase().includes('high') ? 'High risk' : report.toLowerCase().includes('medium') ? 'Medium risk' : 'Checked'} : s));
+    const sourceText = [item.abstract, item.notes].filter(Boolean).join('\n\n').slice(0, 10000);
+    const prompt = `You are an academic originality screening assistant for a university capstone supervision dashboard. Analyze the submission below and return ONLY a valid JSON object, with no markdown fences and no extra commentary, in exactly this shape:\n{"riskLevel":"Low|Medium|High","originalityScore":<integer 0-100, 100 = no concerns, 0 = severe concerns>,"reasons":["..."],"issues":["..."],"suggestions":["..."],"disclaimer":"..."}\n\nRules:\n- Do not claim access to a plagiarism database, web index, or exact-match similarity scanner.\n- Base the screening only on the text provided: citation problems, style/tone inconsistencies, patchwriting risk, abrupt vocabulary or fluency shifts, and structural anomalies.\n- "reasons" = 2-4 short bullet points explaining the assigned risk level.\n- "issues" = specific likely problems found in the text, if any (empty array if none).\n- "suggestions" = 2-4 short, concrete revision steps for the student.\n- "disclaimer" = one sentence stating this is a heuristic AI screening, not a definitive plagiarism/exact-match report.\n- If little or no source text was provided, say so in "reasons" and keep the score cautious (around 40-60) rather than confidently high or low.\n\nSubmission metadata:\nTitle: ${item.title || 'N/A'}\nStudent: ${item.student || 'N/A'}\nSupervisor: ${item.supervisor || 'N/A'}\nFile: ${item.fileName || 'No file attached'} (${item.fileType || 'unknown'})\n\nStudent provided text / abstract / extracted file text:\n${sourceText || 'No extracted text was provided. Use the file metadata and title to give a cautious, limited-scope screening.'}`;
+    const raw = await ai(prompt, 'You are an academic originality screening assistant. Never state certainty beyond the evidence provided. Do not pretend to run a database similarity scan. Return ONLY the requested JSON object, no markdown formatting.', item.provider || 'groq');
+    let screening = null;
+    try {
+      const cleaned = raw.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+      const parsed = JSON.parse(cleaned);
+      const lvl = String(parsed.riskLevel || '').toLowerCase();
+      const scoreNum = Number(parsed.originalityScore);
+      screening = {
+        riskLevel: lvl.includes('high') ? 'High' : lvl.includes('medium') ? 'Medium' : lvl.includes('low') ? 'Low' : 'Unknown',
+        originalityScore: Number.isFinite(scoreNum) ? Math.max(0, Math.min(100, Math.round(scoreNum))) : null,
+        reasons: Array.isArray(parsed.reasons) ? parsed.reasons.filter(Boolean) : [],
+        issues: Array.isArray(parsed.issues) ? parsed.issues.filter(Boolean) : [],
+        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.filter(Boolean) : [],
+        disclaimer: normalizeText(parsed.disclaimer) || 'This is a heuristic AI screening, not a definitive plagiarism/exact-match report.',
+      };
+    } catch { screening = null; }
+    const lower = raw.toLowerCase();
+    const plagiarismStatus = screening && screening.riskLevel !== 'Unknown' ? `${screening.riskLevel} risk`
+      : lower.includes('high') ? 'High risk' : lower.includes('medium') ? 'Medium risk' : lower.includes('low') ? 'Low risk' : 'Checked';
+    setSubmissions(submissions.map(s => s.id === item.id ? {...s, report:raw, screening, plagiarismStatus, checkedAt:new Date().toISOString()} : s));
     setChecking(null);
   }
   return (
     <div>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:20}}>
-        <div style={{color:C.sub, fontSize:13, maxWidth:720}}>Students can upload their capstone project files here. The AI plagiarism/originality screen works best when an abstract or extracted text is also provided.</div>
+        <div style={{color:C.sub, fontSize:13, maxWidth:720}}>Upload capstone files here for AI-assisted originality screening. Text is auto-extracted from PDF and plain-text files; for Word, PowerPoint, or Excel files, paste the abstract or key text for the most accurate screening.</div>
         <Btn onClick={() => setModal(true)} icon={Upload}>Upload Project</Btn>
       </div>
       <div style={{display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16}}>
         {submissions.map(item => (
           <Card key={item.id} style={{padding:18}}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, marginBottom:12}}>
-              <Tag label={item.plagiarismStatus || 'Not checked'} color={item.plagiarismStatus?.includes('High') ? C.red : item.plagiarismStatus?.includes('Medium') ? C.accent : C.green}/>
+              <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                <Tag label={item.plagiarismStatus || 'Not checked'} color={riskColor(item)}/>
+                {item.screening?.originalityScore != null && <span style={{fontSize:11, color:C.muted, fontWeight:600}}>{item.screening.originalityScore}/100</span>}
+              </div>
               <div style={{display:'flex', gap:10}}>
                 <button onClick={() => open(item)} title="View" style={{background:'none', border:'none', color:C.accent, cursor:'pointer'}}><Eye size={14}/></button>
                 <button onClick={() => del(item.id)} title="Delete" style={{background:'none', border:'none', color:C.red, cursor:'pointer'}}><Trash2 size={14}/></button>
@@ -1642,9 +2087,15 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
             <div style={{fontSize:12, color:C.muted, marginBottom:4}}>Supervisor: {item.supervisor || 'N/A'}</div>
             <div style={{fontSize:12, color:C.muted, marginBottom:4}}>File: {item.fileName || 'No file'}</div>
             <div style={{fontSize:12, color:C.muted, marginBottom:12}}>Uploaded: {item.date} {'\u2022'} {item.size}</div>
-            <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
-              <Btn onClick={() => analyze(item)} size="sm" variant="secondary" icon={Brain}>{checking === item.id ? 'Checking...' : 'Check Plagiarism'}</Btn>
+            {item.screening?.originalityScore != null && (
+              <div style={{height:6, borderRadius:4, background:C.surface, overflow:'hidden', marginBottom:12}}>
+                <div style={{height:'100%', width:`${item.screening.originalityScore}%`, background:riskColor(item), borderRadius:4}}/>
+              </div>
+            )}
+            <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
+              <Btn onClick={() => analyze(item)} size="sm" variant="secondary" icon={checking === item.id ? Loader : Brain} disabled={checking === item.id}>{checking === item.id ? 'Screening...' : (item.checkedAt ? 'Re-run Screen' : 'Run Originality Screen')}</Btn>
             </div>
+            {item.checkedAt && <div style={{fontSize:11, color:C.muted, marginTop:8}}>Last screened: {new Date(item.checkedAt).toLocaleString()}</div>}
           </Card>
         ))}
       </div>
@@ -1654,8 +2105,6 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
           <Input label="Student Name" value={form.student} onChange={v => setForm({...form, student:v})} placeholder="Student full name"/>
           <Input label="Supervisor" value={form.supervisor} onChange={v => setForm({...form, supervisor:v})} placeholder="Supervisor name"/>
         </div>
-        <Input label="Abstract / Extracted Text" value={form.abstract} onChange={v => setForm({...form, abstract:v})} placeholder="Paste abstract or extracted text for plagiarism screening" rows={4}/>
-        <Input label="Notes" value={form.notes} onChange={v => setForm({...form, notes:v})} placeholder="Optional comments about the submission" rows={3}/>
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:18}}>
           <div>
             <label style={{display:'block', fontSize:12, color:C.sub, marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em'}}>Upload Project File (PDF, PPT, PPTX, DOCX)</label>
@@ -1670,7 +2119,10 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
             </select>
           </div>
         </div>
-        {form.fileName && <div style={{fontSize:12, color:C.muted, marginBottom:18}}>Selected: {form.fileName}</div>}
+        {form.fileName && <div style={{fontSize:12, color:C.muted, marginBottom:10}}>Selected: {form.fileName}</div>}
+        {form.extractionNote && <div style={{fontSize:12, color:C.accentLight, marginBottom:18, lineHeight:1.5}}>{form.extractionNote}</div>}
+        <Input label="Abstract / Extracted Text" value={form.abstract} onChange={v => setForm({...form, abstract:v})} placeholder="Paste abstract or key text for originality screening (auto-filled for PDF/text uploads)" rows={4}/>
+        <Input label="Notes" value={form.notes} onChange={v => setForm({...form, notes:v})} placeholder="Optional comments about the submission" rows={3}/>
         <div style={{display:'flex', gap:12, justifyContent:'flex-end'}}>
           <Btn onClick={() => {setModal(false); resetForm();}} variant="ghost">Cancel</Btn>
           <Btn onClick={add} icon={Upload}>Save Submission</Btn>
@@ -1691,8 +2143,49 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
             <div style={{padding:20, border:`1px solid ${C.border}`, borderRadius:12, background:C.surface, color:C.sub, fontSize:14, lineHeight:1.7}}>
               <div><strong style={{color:C.text}}>Abstract / Text: </strong></div>
               <div style={{whiteSpace:'pre-wrap', marginTop:8}}>{viewer.abstract || 'No abstract/text provided.'}</div>
-              <div style={{marginTop:16}}><strong style={{color:C.text}}>AI Report: </strong></div>
-              <div style={{whiteSpace:'pre-wrap', marginTop:8}}>{viewer.report || 'No plagiarism/originality check has been run yet.'}</div>
+            </div>
+            <div style={{padding:20, border:`1px solid ${C.border}`, borderRadius:12, background:C.surface}}>
+              <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:10}}>
+                <strong style={{color:C.text, fontSize:14, fontFamily:FONT_SERIF}}>AI Originality Screening</strong>
+                {viewer.screening && <Tag label={`${viewer.screening.riskLevel} risk`} color={riskColor(viewer)}/>}
+              </div>
+              {!viewer.report && <div style={{color:C.muted, fontSize:14}}>No originality check has been run yet.</div>}
+              {viewer.report && viewer.screening && (
+                <div style={{display:'flex', flexDirection:'column', gap:14}}>
+                  <div>
+                    <div style={{fontSize:11, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6}}>Originality Score</div>
+                    <div style={{display:'flex', alignItems:'center', gap:10}}>
+                      <div style={{flex:1, height:8, borderRadius:4, background:C.card, overflow:'hidden'}}>
+                        <div style={{height:'100%', width:`${viewer.screening.originalityScore ?? 0}%`, background:riskColor(viewer), borderRadius:4}}/>
+                      </div>
+                      <span style={{fontSize:13, color:C.text, fontWeight:700, minWidth:48}}>{viewer.screening.originalityScore ?? '—'}/100</span>
+                    </div>
+                  </div>
+                  {viewer.screening.reasons.length > 0 && (
+                    <div>
+                      <div style={{fontSize:11, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6}}>Why This Rating</div>
+                      <ul style={{margin:0, paddingLeft:18, color:C.sub, fontSize:13, lineHeight:1.7}}>{viewer.screening.reasons.map((r,i) => <li key={i}>{r}</li>)}</ul>
+                    </div>
+                  )}
+                  {viewer.screening.issues.length > 0 && (
+                    <div>
+                      <div style={{fontSize:11, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6}}>Likely Issues</div>
+                      <ul style={{margin:0, paddingLeft:18, color:C.sub, fontSize:13, lineHeight:1.7}}>{viewer.screening.issues.map((r,i) => <li key={i}>{r}</li>)}</ul>
+                    </div>
+                  )}
+                  {viewer.screening.suggestions.length > 0 && (
+                    <div>
+                      <div style={{fontSize:11, color:C.muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6}}>Suggested Revisions</div>
+                      <ul style={{margin:0, paddingLeft:18, color:C.sub, fontSize:13, lineHeight:1.7}}>{viewer.screening.suggestions.map((r,i) => <li key={i}>{r}</li>)}</ul>
+                    </div>
+                  )}
+                  <div style={{fontSize:12, color:C.muted, fontStyle:'italic', borderTop:`1px solid ${C.border}`, paddingTop:10}}>{viewer.screening.disclaimer}</div>
+                  {viewer.checkedAt && <div style={{fontSize:11, color:C.muted}}>Last screened: {new Date(viewer.checkedAt).toLocaleString()}</div>}
+                </div>
+              )}
+              {viewer.report && !viewer.screening && (
+                <div style={{whiteSpace:'pre-wrap', color:C.sub, fontSize:14, lineHeight:1.7}}>{viewer.report}</div>
+              )}
             </div>
           </div>
         )}
@@ -1702,17 +2195,34 @@ function CapstoneSubmissionCenter({submissions, setSubmissions}) {
 }
 
 function ProjectTracker({projects, setProjects}) {
+  const emptyForm = {title:'', student:'', supervisor:'', status:'In Progress', progress:0, proposal:'Pending', defense:'Pending'};
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState({title:'', student:'', supervisor:'', status:'In Progress', progress:0, proposal:'Pending', defense:'Pending'});
-  function add() {
-    setProjects([...projects, {...form, id:Date.now(), milestones:[{name:'Proposal', done:false, date:''}, {name:'Literature Review', done:false, date:''}, {name:'System Design', done:false, date:''}, {name:'Implementation', done:false, date:''}, {name:'Testing', done:false, date:''}, {name:'Defense', done:false, date:''}]}]);
-    setModal(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+
+  function openAdd() { setEditId(null); setForm(emptyForm); setModal(true); }
+  function openEdit(p) {
+    setEditId(p.id);
+    setForm({title:p.title, student:p.student, supervisor:p.supervisor, status:p.status, progress:p.progress, proposal:p.proposal||'Pending', defense:p.defense||'Pending'});
+    setModal(true);
   }
+  function closeModal() { setModal(false); setEditId(null); setForm(emptyForm); }
+
+  function save() {
+    if (editId) {
+      setProjects(projects.map(p => p.id === editId ? {...p, ...form, progress:+form.progress} : p));
+    } else {
+      setProjects([...projects, {...form, id:Date.now(), progress:+form.progress, milestones:[{name:'Proposal',done:false,date:''},{name:'Literature Review',done:false,date:''},{name:'System Design',done:false,date:''},{name:'Implementation',done:false,date:''},{name:'Testing',done:false,date:''},{name:'Defense',done:false,date:''}]}]);
+    }
+    closeModal();
+  }
+
   function del(id) { setProjects(projects.filter(p => p.id !== id)); }
   const statColor = {'In Progress':C.blue, 'On Track':C.green, 'Behind':C.red, 'Completed':C.accent, 'At Risk':C.red};
+
   return (
     <div>
-      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:20}}><Btn onClick={() => setModal(true)} icon={Plus}>Add Project</Btn></div>
+      <div style={{display:'flex', justifyContent:'flex-end', marginBottom:20}}><Btn onClick={openAdd} icon={Plus}>Add Project</Btn></div>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:20}}>
         {projects.map(p => (
           <Card key={p.id} style={{padding:24}}>
@@ -1723,7 +2233,10 @@ function ProjectTracker({projects, setProjects}) {
               </div>
               <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:8}}>
                 <Tag label={p.status} color={statColor[p.status] || C.blue}/>
-                <button onClick={() => del(p.id)} style={{background:'none', border:'none', color:C.muted, cursor:'pointer'}}><Trash2 size={14}/></button>
+                <div style={{display:'flex', gap:10}}>
+                  <button onClick={() => openEdit(p)} title="Edit" style={{background:'none', border:'none', color:C.accent, cursor:'pointer'}}><Edit3 size={14}/></button>
+                  <button onClick={() => del(p.id)} title="Delete" style={{background:'none', border:'none', color:C.muted, cursor:'pointer'}}><Trash2 size={14}/></button>
+                </div>
               </div>
             </div>
             <div style={{display:'flex', gap:20, marginBottom:16, fontSize:12, color:C.muted}}>
@@ -1742,7 +2255,7 @@ function ProjectTracker({projects, setProjects}) {
           </Card>
         ))}
       </div>
-      <Modal open={modal} onClose={() => setModal(false)} title="Add Capstone Project" width={500}>
+      <Modal open={modal} onClose={closeModal} title={editId ? 'Edit Capstone Project' : 'Add Capstone Project'} width={500}>
         <Input label="Project Title" value={form.title} onChange={v => setForm({...form, title:v})} placeholder="Project title"/>
         <Input label="Student Name" value={form.student} onChange={v => setForm({...form, student:v})} placeholder="Student full name"/>
         <Input label="Supervisor" value={form.supervisor} onChange={v => setForm({...form, supervisor:v})} placeholder="Supervisor name"/>
@@ -1755,9 +2268,23 @@ function ProjectTracker({projects, setProjects}) {
           </div>
           <Input label="Progress (%)" value={form.progress} onChange={v => setForm({...form, progress:+v})} type="number"/>
         </div>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+          <div style={{marginBottom:18}}>
+            <label style={{display:'block', fontSize:12, color:C.sub, marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em'}}>Proposal</label>
+            <select value={form.proposal} onChange={e => setForm({...form, proposal:e.target.value})} style={{width:'100%', background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 14px', color:C.text, fontSize:14, fontFamily:FONT_SANS, outline:'none'}}>
+              {['Pending','Submitted','Approved','Rejected'].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:18}}>
+            <label style={{display:'block', fontSize:12, color:C.sub, marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em'}}>Defense</label>
+            <select value={form.defense} onChange={e => setForm({...form, defense:e.target.value})} style={{width:'100%', background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 14px', color:C.text, fontSize:14, fontFamily:FONT_SANS, outline:'none'}}>
+              {['Pending','Scheduled','Completed'].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
         <div style={{display:'flex', gap:12, justifyContent:'flex-end'}}>
-          <Btn onClick={() => setModal(false)} variant="ghost">Cancel</Btn>
-          <Btn onClick={add} icon={Plus}>Add Project</Btn>
+          <Btn onClick={closeModal} variant="ghost">Cancel</Btn>
+          <Btn onClick={save} icon={editId ? Save : Plus}>{editId ? 'Save Changes' : 'Add Project'}</Btn>
         </div>
       </Modal>
     </div>
@@ -1766,7 +2293,14 @@ function ProjectTracker({projects, setProjects}) {
 
 function MilestoneTracker({projects, setProjects}) {
   function toggleMilestone(pid, mi) {
-    setProjects(projects.map(p => p.id === pid ? {...p, milestones:p.milestones.map((m, i) => i === mi ? {...m, done:!m.done} : m)} : p));
+    setProjects(projects.map(p => {
+      if (p.id !== pid) return p;
+      const updatedMilestones = p.milestones.map((m, i) => i === mi ? {...m, done: !m.done} : m);
+      const doneCount = updatedMilestones.filter(m => m.done).length;
+      const progress = Math.round((doneCount / updatedMilestones.length) * 100);
+      const status = progress === 100 ? 'Completed' : (p.status === 'Completed' ? 'In Progress' : p.status);
+      return {...p, milestones: updatedMilestones, progress, status};
+    }));
   }
   return (
     <div style={{display:'flex', flexDirection:'column', gap:20}}>
@@ -1853,15 +2387,55 @@ function ProfileModal({ open, onClose, user, onSave }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [dept, setDept] = useState('');
+  const [phone, setPhone] = useState('');
+  const [office, setOffice] = useState('');
+  const [bio, setBio] = useState('');
+  const [avatar, setAvatar] = useState('');
+  const [avatarError, setAvatarError] = useState('');
+  const fileInputRef = useRef(null);
+
   useEffect(() => {
     if (open && user) {
       setName(user.name || '');
       setRole(user.role || 'Professor');
       setDept(user.dept || 'CSE');
+      setPhone(user.phone || '');
+      setOffice(user.office || '');
+      setBio(user.bio || '');
+      setAvatar(user.avatar || '');
+      setAvatarError('');
     }
   }, [open, user]);
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setAvatarError('Please choose an image file (JPG or PNG).'); return; }
+    if (file.size > 3 * 1024 * 1024) { setAvatarError('Image is too large. Please choose a file under 3MB.'); return; }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setAvatar(dataUrl);
+      setAvatarError('');
+    } catch {
+      setAvatarError('Could not load that image. Please try another file.');
+    }
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Edit Profile" width={500}>
+    <Modal open={open} onClose={onClose} title="Edit Profile" width={520}>
+      <div style={{display:'flex', alignItems:'center', gap:18, marginBottom:24, paddingBottom:20, borderBottom:`1px solid ${C.border}`}}>
+        <Avatar user={{name, avatar}} size={76} style={{fontSize:24, border:`2px solid ${C.border}`}}/>
+        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+          <div style={{display:'flex', gap:8}}>
+            <Btn onClick={() => fileInputRef.current?.click()} variant="secondary" size="sm" icon={Upload}>Change Photo</Btn>
+            {avatar && <Btn onClick={() => setAvatar('')} variant="ghost" size="sm" icon={X}>Remove</Btn>}
+          </div>
+          <span style={{fontSize:11, color:C.muted}}>JPG or PNG, up to 3MB.</span>
+          {avatarError && <span style={{fontSize:11, color:C.red}}>{avatarError}</span>}
+        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" style={{display:'none'}} onChange={handleAvatarChange}/>
+      </div>
       <Input label="Full Name" value={name} onChange={setName} placeholder="e.g. Md. Fuad Hasan"/>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
         <div style={{marginBottom:18}}>
@@ -1877,9 +2451,17 @@ function ProfileModal({ open, onClose, user, onSave }) {
         </div>
         <Input label="Department" value={dept} onChange={setDept} placeholder="e.g. CSE"/>
       </div>
+      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+        <Input label="Phone Number" value={phone} onChange={setPhone} placeholder="e.g. +880 1XXX-XXXXXX"/>
+        <Input label="Office / Room" value={office} onChange={setOffice} placeholder="e.g. AB1, Room 405"/>
+      </div>
+      <Input label="Short Bio" value={bio} onChange={setBio} placeholder="A line or two about your research interests or background..." rows={3}/>
+      {user?.email && (
+        <div style={{fontSize:12, color:C.muted, marginTop:-6, marginBottom:18}}>Signed in as <strong style={{color:C.sub}}>{user.email}</strong></div>
+      )}
       <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:12}}>
         <Btn onClick={onClose} variant="ghost">Cancel</Btn>
-        <Btn onClick={() => onSave({ name, role, dept })} icon={Save}>Save Profile</Btn>
+        <Btn onClick={() => onSave({ name, role, dept, phone, office, bio, avatar })} icon={Save}>Save Profile</Btn>
       </div>
     </Modal>
   );
@@ -1910,6 +2492,7 @@ export default function EduAI() {
   const [capstoneSubmissions, setCapstoneSubmissions] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [meetingLogs, setMeetingLogs] = useState([]);
+  const [deadlines, setDeadlines] = useState(DEMO_DEADLINES);
 
   useEffect(() => {
     (async () => {
@@ -1921,9 +2504,10 @@ export default function EduAI() {
       const cs = await gget('eduai_capstone_submissions', []);
       const att = await gget('eduai_attendance', []);
       const ml = await gget('eduai_meeting_logs', []);
+      const dl = await gget('eduai_deadlines', DEMO_DEADLINES);
       
       setGrades(g); setCourses(c); setProjects(p); setMaterials(m); setCurriculumAssets(ca); setCapstoneSubmissions(cs);
-      setAttendance(att); setMeetingLogs(ml);
+      setAttendance(att); setMeetingLogs(ml); setDeadlines(dl);
 
       const savedProfile = localStorage.getItem('eduai_user_profile');
       const parsedProfile = savedProfile ? JSON.parse(savedProfile) : null;
@@ -1970,6 +2554,7 @@ export default function EduAI() {
   async function updCapstoneSubmissions(s) { setCapstoneSubmissions(s); await gset('eduai_capstone_submissions', s); }
   async function updAttendance(a) { setAttendance(a); await gset('eduai_attendance', a); }
   async function updMeetingLogs(m) { setMeetingLogs(m); await gset('eduai_meeting_logs', m); }
+  async function updDeadlines(d) { setDeadlines(d); await gset('eduai_deadlines', d); }
 
   function handleProfileUpdate(newData) {
     const updatedUser = { ...user, ...newData };
@@ -1989,16 +2574,7 @@ export default function EduAI() {
     setPage('login');
   }
 
-  if (authLoading) {
-    return (
-      <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:C.bg, color:C.text, fontFamily:'"DM Sans",system-ui,sans-serif'}}>
-        <div style={{textAlign:'center'}}>
-          <Loader size={22} color={C.accent}/>
-          <div style={{marginTop:12, fontSize:14, color:C.sub}}>Connecting to EduAI...</div>
-        </div>
-      </div>
-    );
-  }
+
 
   if (page === 'login') return <LoginPage onAuthSuccess={(authUser) => {
     const baseUser = { name: getDisplayName(authUser), email: authUser?.email, dept: 'CSE', role: 'Professor', id: authUser?.id || 'demo' };
@@ -2024,7 +2600,7 @@ export default function EduAI() {
           notifOpen={notifOpen}
         />
         <main style={{flex:1, overflowY:'auto', padding:'24px 28px'}}>
-          {module === 'dashboard' && <DashboardHome grades={grades} courses={courses} projects={projects} setModule={setModule}/>}
+          {module === 'dashboard' && <DashboardHome grades={grades} courses={courses} projects={projects} setModule={setModule} deadlines={deadlines} setDeadlines={updDeadlines}/>}
           {module === 'teaching' && <TeachingModule grades={grades} setGrades={updGrades} courses={courses} attendance={attendance} setAttendance={updAttendance}/>}
           {module === 'curriculum' && <CurriculumModule courses={courses} setCourses={updCourses} curriculumAssets={curriculumAssets} setCurriculumAssets={updCurriculumAssets}/>}
           {module === 'materials' && <MaterialsModule materials={materials} setMaterials={updMaterials}/>}
